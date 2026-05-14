@@ -1,0 +1,42 @@
+app:
+  name: microtrade-crypto-ia
+  environment: local
+  version: 0.1.0
+
+logging:
+  level: INFO
+  json: true
+
+api:
+  host: 0.0.0.0
+  port: 8000
+
+redis:
+  url: redis://localhost:6379/0
+  stream_max_len: 10000
+  block_timeout_ms: 5000
+  consumer_group_prefix: microtrade
+  health_timeout_seconds: 1.0
+
+clickhouse:
+  url: http://localhost:8123
+  database: microtrade
+  username: default
+  password: ""
+  connect_timeout_seconds: 2.0
+  read_timeout_seconds: 5.0
+
+risk:
+  max_positions: 5
+  max_daily_risk: 0.02
+  max_drawdown: 0.10
+
+retention:
+  ticks_days: 30
+  orderbook_days: 15
+  features_days: 30
+  signals_days: 90
+  orders_days: 180
+  fills_days: 180
+  positions_days: 365
+

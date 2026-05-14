@@ -1,0 +1,96 @@
+services:
+  redis:
+    image: redis:7.2-alpine
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8-alpine
+    environment:
+      CLICKHOUSE_DB: microtrade
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ./docker/clickhouse/init:/docker-entrypoint-initdb.d:ro
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    mem_limit: 1g
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      MICROTRADE_CONFIG_PATH: /app/config/app.yaml
+      MICROTRADE_REDIS__URL: redis://redis:6379/0
+      MICROTRADE_CLICKHOUSE__URL: http://clickhouse:8123
+    ports:
+      - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    mem_limit: 512m
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    command: ["streamlit", "run", "src/dashboard/app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+    environment:
+      MICROTRADE_CONFIG_PATH: /app/config/app.yaml
+      MICROTRADE_API_BASE_URL: http://api:8000
+    ports:
+      - "8501:8501"
+    depends_on:
+      api:
+        condition: service_started
+    mem_limit: 512m
+
+  trading-engine:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    command: ["python", "scripts/create_redis_groups.py"]
+    environment:
+      MICROTRADE_CONFIG_PATH: /app/config/app.yaml
+      MICROTRADE_REDIS__URL: redis://redis:6379/0
+      MICROTRADE_CLICKHOUSE__URL: http://clickhouse:8123
+    depends_on:
+      redis:
+        condition: service_healthy
+    profiles: ["engine"]
+    mem_limit: 512m
+
+volumes:
+  redis-data:
+  clickhouse-data:
+
