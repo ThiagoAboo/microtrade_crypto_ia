@@ -1,2 +1,0 @@
-"""FastAPI operational API module."""
-
