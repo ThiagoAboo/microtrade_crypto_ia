@@ -1,0 +1,73 @@
+services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - ./docker/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    mem_limit: 256m
+    restart: unless-stopped
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8-alpine
+    environment:
+      CLICKHOUSE_DB: ${MICROTRADE_CLICKHOUSE__DATABASE:-microtrade}
+      CLICKHOUSE_USER: ${MICROTRADE_CLICKHOUSE__USERNAME:-microtrade}
+      CLICKHOUSE_PASSWORD: ${MICROTRADE_CLICKHOUSE__PASSWORD:-microtrade_local}
+    ports:
+      - "127.0.0.1:8123:8123"
+      - "127.0.0.1:9000:9000"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ./docker/clickhouse/init:/docker-entrypoint-initdb.d:ro
+      - ./docker/clickhouse/config.d:/etc/clickhouse-server/config.d:ro
+      - ./docker/clickhouse/users.d/default-profile.xml:/etc/clickhouse-server/users.d/default-profile.xml:ro
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8123/ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    mem_limit: 1g
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api/Dockerfile
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      MICROTRADE_CONFIG_FILE: /app/config/default.yaml
+      MICROTRADE_REDIS__URL: redis://redis:6379/0
+      MICROTRADE_CLICKHOUSE__HOST: clickhouse
+      MICROTRADE_CLICKHOUSE__PORT: 8123
+      MICROTRADE_CLICKHOUSE__USERNAME: ${MICROTRADE_CLICKHOUSE__USERNAME:-microtrade}
+      MICROTRADE_CLICKHOUSE__PASSWORD: ${MICROTRADE_CLICKHOUSE__PASSWORD:-microtrade_local}
+      MICROTRADE_CLICKHOUSE__DATABASE: ${MICROTRADE_CLICKHOUSE__DATABASE:-microtrade}
+      MICROTRADE_MARKET_DATA__SYMBOLS: ${MICROTRADE_MARKET_DATA__SYMBOLS:-BTCUSDT}
+      MICROTRADE_MARKET_DATA__ENABLED: ${MICROTRADE_MARKET_DATA__ENABLED:-true}
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    mem_limit: 384m
+    restart: unless-stopped
+
+volumes:
+  redis-data:
+  clickhouse-data:
